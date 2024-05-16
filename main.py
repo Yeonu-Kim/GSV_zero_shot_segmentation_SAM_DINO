@@ -8,6 +8,8 @@ from groundingdino.util.inference import Model
 from segment_anything import sam_model_registry, SamPredictor
 import numpy as np
 import math
+from pycocotools import coco, cocoeval, mask as cocomask
+import json
 
 HOME = os.getcwd()
 
@@ -133,3 +135,54 @@ ax.axis('off')
 # Adjust layout and display the plot
 plt.tight_layout()
 plt.show()
+
+# Detections: xyxy, mask, confidence, class_id
+# Make COCO dataset format
+# Add COCO dataset
+coco_dataset = {"images":[], "annotations":[], "categories":[]}
+
+# Add images
+image_ids = []
+# for idx, image_path in enumerate(image_paths):
+image_info = {
+    'id': 0,  # Use unique IDs for images
+    'file_name': os.path.basename(SOURCE_IMAGE_PATH),  # Provide image file name
+    'width': image.shape[1],  # Provide image width
+    'height': image.shape[0]  # Provide image height
+}
+coco_dataset["images"].append(image_info)
+image_ids.append(0)  # Keep track of image IDs
+
+# Add annotations
+for idx, detection in enumerate(detections):
+    print(detection)
+    (xyxy_np, mask, _, class_id, _, _) = detection
+
+    # Make segmentation list [x1, y1, x2, y2, ...]
+    (x_coor, y_coor) = np.where(mask == 1)
+    segmentation = []
+    for i in range(len(x_coor)):
+        segmentation.append(int(x_coor[i]))
+        segmentation.append(int(y_coor[i]))
+
+    xyxy = [float(coor) for coor in xyxy_np]
+    
+    annotation = {
+        'id': idx+1,  # Use unique IDs for annotations
+        'image_id': 0,  # Reference the image ID
+        'category_id': int(class_id),  # Reference the category ID
+        'segmentation': [segmentation],  # Provide segmentation information
+        'bbox': list(xyxy),  # Provide bounding box information
+        'area': int(np.sum(mask)),  # Provide area of the instance
+        'iscrowd': 0  # Specify whether the instance is a crowd or nots
+    }
+
+    coco_dataset['annotations'].append(annotation)
+
+# Add categories
+categories = [{'id': i, 'name': class_name} for i, class_name in enumerate(CLASSES, 1)]
+coco_dataset['categories'] = categories
+
+# Save annotations to a JSON file
+with open('annotations.json', 'w') as f:
+    json.dump(coco_dataset, f)
