@@ -97,6 +97,7 @@ class SamPredictor:
         mask_input: Optional[np.ndarray] = None,
         multimask_output: bool = True,
         return_logits: bool = False,
+        dominant: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Predict masks for the given input prompts, using the currently set image.
@@ -161,6 +162,16 @@ class SamPredictor:
         )
 
         masks_np = masks[0].detach().cpu().numpy()
+        print("케이블이다!")
+        if not dominant:
+          # Count the number of 0s and 1s
+          count_0 = np.sum(masks_np == 0)
+          count_1 = np.sum(masks_np == 1)
+
+          # Compare counts and toggle if necessary
+          if count_1 >= count_0:
+              masks_np = 1 - masks_np
+        
         iou_predictions_np = iou_predictions[0].detach().cpu().numpy()
         low_res_masks_np = low_res_masks[0].detach().cpu().numpy()
         return masks_np, iou_predictions_np, low_res_masks_np

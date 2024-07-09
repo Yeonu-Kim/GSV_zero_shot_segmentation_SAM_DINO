@@ -47,8 +47,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = f"{HOME}/data/__FwscCqAFl8v3uNUXf4ow.jpeg"
-CLASSES = ['pole']
+SOURCE_IMAGE_PATH = f"{HOME}/data/_3z_Lgh0Fe5r9WWxDy7VnA.jpeg"
+CLASSES = ['tree', 'telegraph pole', 'building', 'car']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 
@@ -91,8 +91,12 @@ for class_name in class_names:
         combined_mask = np.maximum(combined_mask, mask)
 
     # Save the combined mask as an image file
-    combined_mask_path = f"{HOME}/combined_mask.png"
+    combined_mask_path = f"{HOME}/{class_name}.png"
     cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
+
+    # Show image polts for debugging
+    if len(detections.mask) == 0:
+        continue
 
     # annotate image with detections
     box_annotator = sv.BoxAnnotator()
@@ -120,24 +124,11 @@ for class_name in class_names:
     # Calculate the number of rows and columns for the grid
     grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-    # Create a figure with a grid of subplots
-    fig, axes = plt.subplots(grid_size_dimension, grid_size_dimension, figsize=(16, 16))
-
-    # Flatten the axes array for easy iteration
-    axes = axes.flatten()
-
-    # Iterate over each image and plot it on the corresponding subplot
-    for idx, image in enumerate(detections.mask):
-        ax = axes[idx]
-        ax.imshow(image, cmap='gray')
-        ax.set_title(titles[idx])
-        ax.axis('off')  # Hide the axis
-
-    # Hide any remaining empty subplots if the number of images is less than the grid size
-    for idx in range(len(detections.mask), len(axes)):
-        axes[idx].axis('off')
-
-    # Adjust layout and display the plot
+    # Display the combined_mask image
+    plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
+    plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
+    plt.title('Combined Mask')
+    plt.axis('off')  # Hide axis ticks and labels
     plt.tight_layout()
     plt.show()
 

@@ -1,6 +1,5 @@
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 
 def clamp(x, min_val, max_val):
     return max(min_val, min(max_val, x))
@@ -136,30 +135,24 @@ def render_face(read_image, face, rotation, interpolation, max_width=np.inf):
 
     return write_image
 
-# Load the spherical panorama image
-image_path = './data/__FwscCqAFl8v3uNUXf4ow.jpeg'
-read_image = cv2.imread(image_path)
-read_image = cv2.cvtColor(read_image, cv2.COLOR_BGR2RGB)  # Convert to RGB if it's BGR
+def panorama_to_cubemap(image):
+    # Load the spherical panorama image
+    image_path = './data/__FwscCqAFl8v3uNUXf4ow.jpeg'
+    read_image = cv2.imread(image_path)
+    read_image = cv2.cvtColor(read_image, cv2.COLOR_BGR2RGB)  # Convert to RGB if it's BGR
 
-# Define the size of each cubemap face
-face_size = 512
+    # Define the size of each cubemap face
+    face_size = 512
 
-# Define the faces of the cubemap
-faces = ['pz', 'nz', 'px', 'nx', 'py', 'ny']
-rotations = [0, 0, 0, 0, 0, 0]
+    # Define the faces of the cubemap
+    faces = ['pz', 'nz', 'px', 'nx', 'py', 'ny']
+    rotations = [0, 0, 0, 0, 0, 0]
 
-# Generate cubemap faces
-cubemap_faces = {}
-for face, rotation in zip(faces, rotations):
-    cubemap_faces[face] = render_face(read_image, face, rotation, 'nearest', face_size)
+    # Generate cubemap faces
+    cubemap_faces = {}
+    for face, rotation in zip(faces, rotations):
+        cubemap_faces[face] = render_face(read_image, face, rotation, 'nearest', face_size)
 
-# Display the cubemap faces
-plt.figure(figsize=(16, 8))
-for i, (face, img) in enumerate(cubemap_faces.items()):
-    plt.subplot(2, 3, i + 1)
-    plt.imshow(img)
-    plt.title(face)
-    plt.axis('off')
+    return cubemap_faces
+    # Display the cubemap faces
 
-plt.tight_layout()
-plt.show()
