@@ -1,7 +1,6 @@
 import torch
 import cv2
 import os
-import sys
 import supervision as sv
 import matplotlib.pyplot as plt
 from groundingdino.util.inference import Model
@@ -14,17 +13,8 @@ import json
 HOME = os.getcwd()
 
 GROUNDING_DINO_CHECKPOINT_PATH = os.path.join(HOME, "weights", "groundingdino_swint_ogc.pth")
-print(GROUNDING_DINO_CHECKPOINT_PATH, "; exist:", os.path.isfile(GROUNDING_DINO_CHECKPOINT_PATH))
 GROUNDING_DINO_CONFIG_PATH = os.path.join(HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py")
-print(GROUNDING_DINO_CONFIG_PATH, "; exist:", os.path.isfile(GROUNDING_DINO_CONFIG_PATH))
 SAM_CHECKPOINT_PATH = os.path.join(HOME, "weights", "sam_vit_h_4b8939.pth")
-print(SAM_CHECKPOINT_PATH, "; exist:", os.path.isfile(SAM_CHECKPOINT_PATH))
-
-def add_all_suffix(class_names):
-    result = []
-    for class_name in class_names:
-        result.append("all " + class_name + "s")
-    return result
 
 def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) -> np.ndarray:
     sam_predictor.set_image(image)
@@ -39,150 +29,101 @@ def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) ->
     return np.array(result_masks)
 
 
-grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
-
-SAM_ENCODER_VERSION = "vit_h"
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
+sam = sam_model_registry["vit_h"](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
 SOURCE_IMAGE_PATH = f"{HOME}/data/satellite_ship_2.png"
-CLASSES = ['ship']
-BOX_TRESHOLD = 0.35
-TEXT_TRESHOLD = 0.25
-
-class_names = add_all_suffix(CLASSES)
-#class_names =['all trafficlights', 'all trees', 'all persons']
-
-# load image
 image = cv2.imread(SOURCE_IMAGE_PATH)
 
-# detect objects
-detections = grounding_dino_model.predict_with_classes(
+sam_predictor.set_image(image)
+masks, _, _ = sam_predictor.predict(box=None, multimask_output=False)
+
+def masks_to_boxes(masks):
+    boxes = []
+    for mask in masks:
+        pos = np.where(mask)
+        xmin = np.min(pos[1])
+        xmax = np.max(pos[1])
+        ymin = np.min(pos[0])
+        ymax = np.max(pos[0])
+        boxes.append([xmin, ymin, xmax, ymax])
+    return np.array(boxes)
+
+xyxy_boxes = masks_to_boxes(masks)
+
+grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
+
+CLASSES = ['ship']
+BOX_THRESHOLD = 0.35
+TEXT_THRESHOLD = 0.25
+
+class_names = [f"all {cls}s" for cls in CLASSES]
+
+detections = grounding_dino_model.predict_with_boxes(
     image=image,
-    classes=class_names,
-    box_threshold=BOX_TRESHOLD,
-    text_threshold=TEXT_TRESHOLD
+    boxes=xyxy_boxes,
+    box_threshold=BOX_THRESHOLD,
+    text_threshold=TEXT_THRESHOLD
 )
 
-# annotate image with detections
 box_annotator = sv.BoxAnnotator()
 labels = [
     f"{CLASSES[class_id]} {confidence:0.2f}" 
     for _, _, confidence, class_id, _, _
-    in detections]
-annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
+    in detections
+]
 
+annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
 sv.plot_image(annotated_frame, (16, 16))
 
-
-
-# convert detections to masks
 detections.mask = segment(
     sam_predictor=sam_predictor,
     image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
     xyxy=detections.xyxy
 )
-# annotate image with detections
-box_annotator = sv.BoxAnnotator()
+
 mask_annotator = sv.MaskAnnotator()
-labels = [
-    f"{CLASSES[class_id]} {confidence:0.2f}"
-    for _, _, confidence, class_id, _, _
-    in detections
-] #if you dont update SV you will face problems here .
 annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
 annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
 sv.plot_image(annotated_image, (16, 16))
 
-grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
-
-titles = [
-    CLASSES[class_id]
-    for class_id
-    in detections.class_id
-]
-
-# Calculate the number of rows and columns for the grid
-grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
-
-# Create a figure and a single set of axes
-fig, ax = plt.subplots(figsize=(16, 16))
-
-# Iterate over each image
-for idx, image in enumerate(detections.mask):
-    # Calculate the row and column indices
-    row = idx // grid_size_dimension
-    col = idx % grid_size_dimension
-    
-    # Plot the image on the single set of axes
-    ax.imshow(image, cmap='gray')
-    ax.set_title(titles[idx])
-    
-    # Calculate the position of the axes for the next image
-    ax_position = ax.get_position()
-    ax_position.x0 = col / grid_size_dimension
-    ax_position.x1 = (col + 1) / grid_size_dimension
-    ax_position.y0 = 1 - (row + 1) / grid_size_dimension
-    ax_position.y1 = 1 - row / grid_size_dimension
-    ax.set_position(ax_position)
-
-# Hide the remaining axes
-ax.axis('off')
-
-# Adjust layout and display the plot
-plt.tight_layout()
-plt.show()
-
-# Detections: xyxy, mask, confidence, class_id
-# Make COCO dataset format
-# Add COCO dataset
 coco_dataset = {"images":[], "annotations":[], "categories":[]}
 
-# Add images
-image_ids = []
-# for idx, image_path in enumerate(image_paths):
 image_info = {
-    'id': 0,  # Use unique IDs for images
-    'file_name': os.path.basename(SOURCE_IMAGE_PATH),  # Provide image file name
-    'width': image.shape[1],  # Provide image width
-    'height': image.shape[0]  # Provide image height
+    'id': 0,
+    'file_name': os.path.basename(SOURCE_IMAGE_PATH),
+    'width': image.shape[1],
+    'height': image.shape[0]
 }
 coco_dataset["images"].append(image_info)
-image_ids.append(0)  # Keep track of image IDs
 
-# Add annotations
 for idx, detection in enumerate(detections):
-    print(detection)
-    (xyxy_np, mask, _, class_id, _, _) = detection
+    xyxy_np, mask, _, class_id, _, _ = detection
 
-    # Make segmentation list [x1, y1, x2, y2, ...]
-    (x_coor, y_coor) = np.where(mask == 1)
+    x_coor, y_coor = np.where(mask == 1)
     segmentation = []
     for i in range(len(x_coor)):
         segmentation.append(int(x_coor[i]))
         segmentation.append(int(y_coor[i]))
 
     xyxy = [float(coor) for coor in xyxy_np]
-    
+
     annotation = {
-        'id': idx+1,  # Use unique IDs for annotations
-        'image_id': 0,  # Reference the image ID
-        'category_id': int(class_id),  # Reference the category ID
-        'segmentation': [segmentation],  # Provide segmentation information
-        'bbox': list(xyxy),  # Provide bounding box information
-        'area': int(np.sum(mask)),  # Provide area of the instance
-        'iscrowd': 0  # Specify whether the instance is a crowd or nots
+        'id': idx + 1,
+        'image_id': 0,
+        'category_id': int(class_id),
+        'segmentation': [segmentation],
+        'bbox': list(xyxy),
+        'area': int(np.sum(mask)),
+        'iscrowd': 0
     }
 
     coco_dataset['annotations'].append(annotation)
 
-# Add categories
 categories = [{'id': i, 'name': class_name} for i, class_name in enumerate(CLASSES, 1)]
 coco_dataset['categories'] = categories
 
-# Save annotations to a JSON file
 with open('annotations.json', 'w') as f:
     json.dump(coco_dataset, f)
