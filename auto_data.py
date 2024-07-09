@@ -47,8 +47,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = f"{HOME}/data/test2.png"
-CLASSES = ['trash']
+SOURCE_IMAGE_PATH = f"{HOME}/data/__FwscCqAFl8v3uNUXf4ow.jpeg"
+CLASSES = ['pole']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 
@@ -57,92 +57,88 @@ class_names = add_all_suffix(CLASSES)
 # load image
 image = cv2.imread(SOURCE_IMAGE_PATH)
 
-# detect objects
-detections = grounding_dino_model.predict_with_classes(
-    image=image,
-    classes=class_names,
-    box_threshold=BOX_TRESHOLD,
-    text_threshold=TEXT_TRESHOLD
-)
+for class_name in class_names:
+    # detect objects
+    detections = grounding_dino_model.predict_with_classes(
+        image=image,
+        classes=[class_name],
+        box_threshold=BOX_TRESHOLD,
+        text_threshold=TEXT_TRESHOLD
+    )
 
-# annotate image with detections
-box_annotator = sv.BoxAnnotator()
-labels = [
-    f"{CLASSES[class_id]} {confidence:0.2f}" 
-    for _, _, confidence, class_id, _, _
-    in detections]
-annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
+    # annotate image with detections
+    box_annotator = sv.BoxAnnotator()
+    labels = [
+        f"{class_name} {confidence:0.2f}" 
+        for _, _, confidence, _, _, _
+        in detections]
+    annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
 
-sv.plot_image(annotated_frame, (16, 16))
+    sv.plot_image(annotated_frame, (16, 16))
 
-# convert detections to masks
-detections.mask = segment(
-    sam_predictor=sam_predictor,
-    image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
-    xyxy=detections.xyxy
-)
+    # convert detections to masks
+    detections.mask = segment(
+        sam_predictor=sam_predictor,
+        image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+        xyxy=detections.xyxy
+    )
 
-# Create a combined mask
-combined_mask = np.zeros_like(image[:, :, 0])  # Create a blank image with the same height and width as the original image, but single channel
+    # Create a combined mask
+    combined_mask = np.zeros_like(image[:, :, 0])  # Create a blank image with the same height and width as the original image, but single channel
 
-# Overlay each mask onto the blank image
-for mask in detections.mask:
-    combined_mask = np.maximum(combined_mask, mask)
+    # Overlay each mask onto the blank image
+    for mask in detections.mask:
+        combined_mask = np.maximum(combined_mask, mask)
 
-# Save the combined mask as an image file
-combined_mask_path = f"{HOME}/combined_mask.png"
-cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
+    # Save the combined mask as an image file
+    combined_mask_path = f"{HOME}/combined_mask.png"
+    cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
 
-# annotate image with detections
-box_annotator = sv.BoxAnnotator()
-mask_annotator = sv.MaskAnnotator()
-labels = [
-    f"{CLASSES[class_id]} {confidence:0.2f}"
-    for _, _, confidence, class_id, _, _
-    in detections
-] #if you dont update SV you will face problems here .
-annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
-annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
+    # annotate image with detections
+    box_annotator = sv.BoxAnnotator()
+    mask_annotator = sv.MaskAnnotator()
+    labels = [
+        f"{class_name} {confidence:0.2f}"
+        for _, _, confidence, _, _, _
+        in detections
+    ]
 
-sv.plot_image(annotated_image, (16, 16))
+    #if you dont update SV you will face problems here .
+    annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
+    annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
-grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
+    sv.plot_image(annotated_image, (16, 16))
 
-titles = [
-    CLASSES[class_id]
-    for class_id
-    in detections.class_id
-]
+    grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-# Calculate the number of rows and columns for the grid
-grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
+    titles = [
+        CLASSES[class_id]
+        for class_id
+        in detections.class_id
+    ]
 
-# Create a figure and a single set of axes
-fig, ax = plt.subplots(figsize=(16, 16))
+    # Calculate the number of rows and columns for the grid
+    grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-# Iterate over each image
-for idx, image in enumerate(detections.mask):
-    # Calculate the row and column indices
-    row = idx // grid_size_dimension
-    col = idx % grid_size_dimension
-    
-    # Plot the image on the single set of axes
-    ax.imshow(image, cmap='gray')
-    ax.set_title(titles[idx])
-    
-    # Calculate the position of the axes for the next image
-    ax_position = ax.get_position()
-    ax_position.x0 = col / grid_size_dimension
-    ax_position.x1 = (col + 1) / grid_size_dimension
-    ax_position.y0 = 1 - (row + 1) / grid_size_dimension
-    ax_position.y1 = 1 - row / grid_size_dimension
-    ax.set_position(ax_position)
+    # Create a figure with a grid of subplots
+    fig, axes = plt.subplots(grid_size_dimension, grid_size_dimension, figsize=(16, 16))
 
-# Hide the remaining axes
-ax.axis('off')
+    # Flatten the axes array for easy iteration
+    axes = axes.flatten()
 
-# Adjust layout and display the plot
-plt.tight_layout()
-plt.show()
+    # Iterate over each image and plot it on the corresponding subplot
+    for idx, image in enumerate(detections.mask):
+        ax = axes[idx]
+        ax.imshow(image, cmap='gray')
+        ax.set_title(titles[idx])
+        ax.axis('off')  # Hide the axis
 
-print(f"Combined mask saved at {combined_mask_path}")
+    # Hide any remaining empty subplots if the number of images is less than the grid size
+    for idx in range(len(detections.mask), len(axes)):
+        axes[idx].axis('off')
+
+    # Adjust layout and display the plot
+    plt.tight_layout()
+    plt.show()
+
+    print(f"Combined mask saved at {combined_mask_path}")
