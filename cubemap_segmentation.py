@@ -179,7 +179,7 @@ for turn, image_path in enumerate(tqdm(images)):
             # plt.show()
 
             # print(f"Combined mask saved at {combined_mask_path}")
-    total_pixel /= (512*512)
+    total_pixel /= (512*512*4)
     df.loc[len(df)] = [filename] + list(total_pixel)
 
 output_file_path = "./output/output.csv"
