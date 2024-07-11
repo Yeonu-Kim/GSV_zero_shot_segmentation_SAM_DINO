@@ -162,7 +162,6 @@ class SamPredictor:
             return_logits=return_logits,
             dominant=dominant
         )
-
         masks_np = masks[0].detach().cpu().numpy()
         
         iou_predictions_np = iou_predictions[0].detach().cpu().numpy()

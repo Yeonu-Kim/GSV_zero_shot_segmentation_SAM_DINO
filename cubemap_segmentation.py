@@ -37,7 +37,17 @@ def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray, do
             multimask_output=True,
             dominant=dominant
         )
+        
+        # for mask in masks:
+        #     plt.imshow(mask)
+        #     plt.show()
+        # if dominant:
+        #     index = np.argmax(scores)
+        # else:
+        #     sums = [np.sum(mask) for mask in masks]
+        #     index = np.argmin(sums)
         index = np.argmax(scores)
+        
         result_masks.append(masks[index])
     return np.array(result_masks)
 
@@ -52,15 +62,19 @@ sam_predictor = SamPredictor(sam)
 
 SOURCE_IMAGE_PATH = f"{HOME}/data"
 CLASSES = ['cable']
+TINY_CLASSES = ['cable']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 
 all_class = add_all_suffix(CLASSES)
+tiny_objects = add_all_suffix(TINY_CLASSES)
+
+# Save the result in a dataframe
 
 # load image
 images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
 
-for image_path in images:
+for turn, image_path in enumerate(images):
     image = cv2.imread(image_path)
     filename, extension = os.path.basename(image_path).rsplit('.', 1)
 
@@ -94,14 +108,22 @@ for image_path in images:
                 in detections]
             annotated_frame = box_annotator.annotate(scene=cubemap.copy(), detections=detections, labels=labels)
 
-            # sv.plot_image(annotated_frame, (16, 16))
+            sv.plot_image(annotated_frame, (16, 16))
 
             # convert detections to masks
-            detections.mask = segment(
-                sam_predictor=sam_predictor,
-                image=cv2.cvtColor(cubemap, cv2.COLOR_BGR2RGB),
-                xyxy=detections.xyxy
-            )
+            if class_name in tiny_objects:
+                detections.mask = segment(
+                    sam_predictor=sam_predictor,
+                    image=cv2.cvtColor(cubemap, cv2.COLOR_BGR2RGB),
+                    xyxy=detections.xyxy,
+                    dominant = False
+                )
+            else: 
+                detections.mask = segment(
+                    sam_predictor=sam_predictor,
+                    image=cv2.cvtColor(cubemap, cv2.COLOR_BGR2RGB),
+                    xyxy=detections.xyxy
+                )
 
             # Create a combined mask
             combined_mask = np.zeros_like(cubemap[:, :, 0])  # Create a blank image with the same height and width as the original image, but single channel
@@ -110,9 +132,10 @@ for image_path in images:
             for mask in detections.mask:
                 combined_mask = np.maximum(combined_mask, mask)
 
-            # Save the combined mask as an image file
-            combined_mask_path = f"{HOME}/output/{CLASSES[class_idx]}/{filename}.png"
-            cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
+            # Save the combined mask as an image file every 100 time
+            if turn % 100 == 0:
+                combined_mask_path = f"{HOME}/output/{CLASSES[class_idx]}/{filename}.png"
+                cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
 
             # Show image polts for debugging
             if len(detections.mask) == 0:
@@ -131,19 +154,19 @@ for image_path in images:
             annotated_image = mask_annotator.annotate(scene=cubemap.copy(), detections=detections)
             annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
-            # sv.plot_image(annotated_image, (16, 16))
+            sv.plot_image(annotated_image, (16, 16))
 
             grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
             # Calculate the number of rows and columns for the grid
             grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-            # # Display the combined_mask image
-            # plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
-            # plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
-            # plt.title(F'{CLASSES[class_idx]}')
-            # plt.axis('off')  # Hide axis ticks and labels
-            # plt.tight_layout()
-            # plt.show()
+            # Display the combined_mask image
+            plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
+            plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
+            plt.title(F'{CLASSES[class_idx]}')
+            plt.axis('off')  # Hide axis ticks and labels
+            plt.tight_layout()
+            plt.show()
 
             print(f"Combined mask saved at {combined_mask_path}")
