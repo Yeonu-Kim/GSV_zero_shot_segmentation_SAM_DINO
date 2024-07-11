@@ -136,23 +136,31 @@ def render_face(read_image, face, rotation, interpolation, max_width=np.inf):
     return write_image
 
 def panorama_to_cubemap(image):
-    # Load the spherical panorama image
-    image_path = './data/__FwscCqAFl8v3uNUXf4ow.jpeg'
-    read_image = cv2.imread(image_path)
-    read_image = cv2.cvtColor(read_image, cv2.COLOR_BGR2RGB)  # Convert to RGB if it's BGR
-
     # Define the size of each cubemap face
     face_size = 512
 
     # Define the faces of the cubemap
-    faces = ['pz', 'nz', 'px', 'nx', 'py', 'ny']
+    faces = ['pz', 'nz', 'px', 'nx']
     rotations = [0, 0, 0, 0, 0, 0]
 
     # Generate cubemap faces
     cubemap_faces = {}
     for face, rotation in zip(faces, rotations):
-        cubemap_faces[face] = render_face(read_image, face, rotation, 'nearest', face_size)
+        cubemap_faces[face] = render_face(image, face, rotation, 'nearest', face_size)
 
     return cubemap_faces
     # Display the cubemap faces
 
+def merge_faces(cubemap_faces):
+    face_size = cubemap_faces['pz'].shape[0]
+    
+    # Create an empty image to hold the merged faces
+    merged_image = np.zeros((face_size, 4 * face_size, 3), dtype=np.uint8)
+    
+    # Place each face in the appropriate position
+    merged_image[:, :face_size] = cubemap_faces['nz']  # First face (pz)
+    merged_image[:, face_size:2*face_size] = cubemap_faces['nx']  # Second face (nz)
+    merged_image[:, 2*face_size:3*face_size] = cubemap_faces['pz']  # Third face (px)
+    merged_image[:, 3*face_size:] = cubemap_faces['px']  # Fourth face (nx)
+    
+    return merged_image

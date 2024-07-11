@@ -6,6 +6,7 @@
 
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
 from segment_anything.modeling import Sam
 
@@ -159,18 +160,10 @@ class SamPredictor:
             mask_input_torch,
             multimask_output,
             return_logits=return_logits,
+            dominant=dominant
         )
 
         masks_np = masks[0].detach().cpu().numpy()
-        print("케이블이다!")
-        if not dominant:
-          # Count the number of 0s and 1s
-          count_0 = np.sum(masks_np == 0)
-          count_1 = np.sum(masks_np == 1)
-
-          # Compare counts and toggle if necessary
-          if count_1 >= count_0:
-              masks_np = 1 - masks_np
         
         iou_predictions_np = iou_predictions[0].detach().cpu().numpy()
         low_res_masks_np = low_res_masks[0].detach().cpu().numpy()
@@ -185,6 +178,7 @@ class SamPredictor:
         mask_input: Optional[torch.Tensor] = None,
         multimask_output: bool = True,
         return_logits: bool = False,
+        dominant: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Predict masks for the given input prompts, using the currently set image.
@@ -249,7 +243,7 @@ class SamPredictor:
         masks = self.model.postprocess_masks(low_res_masks, self.input_size, self.original_size)
 
         if not return_logits:
-            masks = masks > self.model.mask_threshold
+          masks = masks > self.model.mask_threshold
 
         return masks, iou_predictions, low_res_masks
 

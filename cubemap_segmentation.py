@@ -10,7 +10,8 @@ import numpy as np
 import math
 from pycocotools import coco, cocoeval, mask as cocomask
 import json
-from util.converter import panorama_to_cubemap
+from util.converter import panorama_to_cubemap, merge_faces
+from tqdm import tqdm 
 
 HOME = os.getcwd()
 
@@ -49,47 +50,52 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = f"{HOME}/data/_3z_Lgh0Fe5r9WWxDy7VnA.jpeg"
+SOURCE_IMAGE_PATH = f"{HOME}/data"
 CLASSES = ['cable']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 
-class_names = add_all_suffix(CLASSES)
+all_class = add_all_suffix(CLASSES)
 
 # load image
-image = cv2.imread(SOURCE_IMAGE_PATH)
+images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
 
-# Make a cubemap
-cubemaps = panorama_to_cubemap(image)
+for image_path in images:
+    image = cv2.imread(image_path)
+    filename, extension = os.path.basename(image_path).rsplit('.', 1)
 
-for key, cubemap in cubemaps.items():
-    for class_name in class_names:
-        # detect objects
-        detections = grounding_dino_model.predict_with_classes(
-            image=cubemap,
-            classes=[class_name],
-            box_threshold=BOX_TRESHOLD,
-            text_threshold=TEXT_TRESHOLD
-        )
+    if extension != 'jpeg':
+        continue
 
-        # annotate image with detections
-        box_annotator = sv.BoxAnnotator()
-        labels = [
-            f"{class_name} {confidence:0.2f}" 
-            for _, _, confidence, _, _, _
-            in detections]
-        annotated_frame = box_annotator.annotate(scene=cubemap.copy(), detections=detections, labels=labels)
+    # Make a cubemap
+    cubemaps = panorama_to_cubemap(image)
 
-        sv.plot_image(annotated_frame, (16, 16))
+    for key, cubemap in cubemaps.items():
+        for class_idx, class_name in enumerate(all_class):
+            class_names = [class_name]
+            # if class_name == "all telegraph poles":
+            #     class_names = [class_name, 'all street lights', 'all traffic lights']
+            # else:
+            #     class_names = [class_name]
 
-        if class_name == "all cables":
-            detections.mask = segment(
-                sam_predictor=sam_predictor,
-                image=cv2.cvtColor(cubemap, cv2.COLOR_BGR2RGB),
-                xyxy=detections.xyxy,
-                dominant=False
+            # detect objects
+            detections = grounding_dino_model.predict_with_classes(
+                image=cubemap,
+                classes=class_names,
+                box_threshold=BOX_TRESHOLD,
+                text_threshold=TEXT_TRESHOLD
             )
-        else:
+
+            # annotate image with detections
+            box_annotator = sv.BoxAnnotator()
+            labels = [
+                f"{CLASSES[class_id]} {confidence:0.2f}" 
+                for _, _, confidence, class_id, _, _
+                in detections]
+            annotated_frame = box_annotator.annotate(scene=cubemap.copy(), detections=detections, labels=labels)
+
+            # sv.plot_image(annotated_frame, (16, 16))
+
             # convert detections to masks
             detections.mask = segment(
                 sam_predictor=sam_predictor,
@@ -97,47 +103,47 @@ for key, cubemap in cubemaps.items():
                 xyxy=detections.xyxy
             )
 
-        # Create a combined mask
-        combined_mask = np.zeros_like(cubemap[:, :, 0])  # Create a blank image with the same height and width as the original image, but single channel
+            # Create a combined mask
+            combined_mask = np.zeros_like(cubemap[:, :, 0])  # Create a blank image with the same height and width as the original image, but single channel
 
-        # Overlay each mask onto the blank image
-        for mask in detections.mask:
-            combined_mask = np.maximum(combined_mask, mask)
+            # Overlay each mask onto the blank image
+            for mask in detections.mask:
+                combined_mask = np.maximum(combined_mask, mask)
 
-        # Save the combined mask as an image file
-        combined_mask_path = f"{HOME}/{class_name}.png"
-        cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
+            # Save the combined mask as an image file
+            combined_mask_path = f"{HOME}/output/{CLASSES[class_idx]}/{filename}.png"
+            cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
 
-        # Show image polts for debugging
-        if len(detections.mask) == 0:
-            continue
+            # Show image polts for debugging
+            if len(detections.mask) == 0:
+                continue
 
-        # annotate image with detections
-        box_annotator = sv.BoxAnnotator()
-        mask_annotator = sv.MaskAnnotator()
-        labels = [
-            f"{class_name} {confidence:0.2f}"
-            for _, _, confidence, _, _, _
-            in detections
-        ]
+            # annotate image with detections
+            box_annotator = sv.BoxAnnotator()
+            mask_annotator = sv.MaskAnnotator()
+            labels = [
+                f"{CLASSES[class_id]} {confidence:0.2f}"
+                for _, _, confidence, class_id, _, _
+                in detections
+            ]
 
-        #if you dont update SV you will face problems here .
-        annotated_image = mask_annotator.annotate(scene=cubemap.copy(), detections=detections)
-        annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
+            #if you dont update SV you will face problems here .
+            annotated_image = mask_annotator.annotate(scene=cubemap.copy(), detections=detections)
+            annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
-        sv.plot_image(annotated_image, (16, 16))
+            # sv.plot_image(annotated_image, (16, 16))
 
-        grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
+            grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-        # Calculate the number of rows and columns for the grid
-        grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
+            # Calculate the number of rows and columns for the grid
+            grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-        # Display the combined_mask image
-        plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
-        plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
-        plt.title('Combined Mask')
-        plt.axis('off')  # Hide axis ticks and labels
-        plt.tight_layout()
-        plt.show()
+            # # Display the combined_mask image
+            # plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
+            # plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
+            # plt.title(F'{CLASSES[class_idx]}')
+            # plt.axis('off')  # Hide axis ticks and labels
+            # plt.tight_layout()
+            # plt.show()
 
-        print(f"Combined mask saved at {combined_mask_path}")
+            print(f"Combined mask saved at {combined_mask_path}")
