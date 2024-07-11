@@ -7,11 +7,15 @@ import matplotlib.pyplot as plt
 from groundingdino.util.inference import Model
 from segment_anything import sam_model_registry, SamPredictor
 import numpy as np
+import pandas as pd
 import math
 from pycocotools import coco, cocoeval, mask as cocomask
 import json
 from util.converter import panorama_to_cubemap, merge_faces
 from tqdm import tqdm 
+import warnings
+
+warnings.filterwarnings(action='ignore')
 
 HOME = os.getcwd()
 
@@ -61,7 +65,7 @@ sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to
 sam_predictor = SamPredictor(sam)
 
 SOURCE_IMAGE_PATH = f"{HOME}/data"
-CLASSES = ['cable']
+CLASSES = ['tree', 'building', 'sky', 'road', 'vehicle', 'pole', 'cable', 'trash', 'street light']
 TINY_CLASSES = ['cable']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
@@ -70,11 +74,13 @@ all_class = add_all_suffix(CLASSES)
 tiny_objects = add_all_suffix(TINY_CLASSES)
 
 # Save the result in a dataframe
+df_columns = ['name'] + CLASSES
+df = pd.DataFrame(columns = df_columns)
 
 # load image
 images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
 
-for turn, image_path in enumerate(images):
+for turn, image_path in enumerate(tqdm(images)):
     image = cv2.imread(image_path)
     filename, extension = os.path.basename(image_path).rsplit('.', 1)
 
@@ -84,6 +90,7 @@ for turn, image_path in enumerate(images):
     # Make a cubemap
     cubemaps = panorama_to_cubemap(image)
 
+    total_pixel = np.zeros(len(CLASSES))
     for key, cubemap in cubemaps.items():
         for class_idx, class_name in enumerate(all_class):
             class_names = [class_name]
@@ -108,7 +115,7 @@ for turn, image_path in enumerate(images):
                 in detections]
             annotated_frame = box_annotator.annotate(scene=cubemap.copy(), detections=detections, labels=labels)
 
-            sv.plot_image(annotated_frame, (16, 16))
+            # sv.plot_image(annotated_frame, (16, 16))
 
             # convert detections to masks
             if class_name in tiny_objects:
@@ -131,6 +138,8 @@ for turn, image_path in enumerate(images):
             # Overlay each mask onto the blank image
             for mask in detections.mask:
                 combined_mask = np.maximum(combined_mask, mask)
+            
+            total_pixel[class_idx] += np.sum(combined_mask)
 
             # Save the combined mask as an image file every 100 time
             if turn % 100 == 0:
@@ -154,19 +163,25 @@ for turn, image_path in enumerate(images):
             annotated_image = mask_annotator.annotate(scene=cubemap.copy(), detections=detections)
             annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
-            sv.plot_image(annotated_image, (16, 16))
+            # sv.plot_image(annotated_image, (16, 16))
 
             grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
             # Calculate the number of rows and columns for the grid
             grid_size_dimension = math.ceil(math.sqrt(len(detections.mask)))
 
-            # Display the combined_mask image
-            plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
-            plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
-            plt.title(F'{CLASSES[class_idx]}')
-            plt.axis('off')  # Hide axis ticks and labels
-            plt.tight_layout()
-            plt.show()
+            # # Display the combined_mask image
+            # plt.figure(figsize=(8, 6))  # Adjust the figure size as needed
+            # plt.imshow(combined_mask, cmap='gray')  # Use 'gray' colormap for grayscale images
+            # plt.title(F'{CLASSES[class_idx]}')
+            # plt.axis('off')  # Hide axis ticks and labels
+            # plt.tight_layout()
+            # plt.show()
 
-            print(f"Combined mask saved at {combined_mask_path}")
+            # print(f"Combined mask saved at {combined_mask_path}")
+    total_pixel /= (512*512)
+    df.loc[len(df)] = [filename] + list(total_pixel)
+
+output_file_path = "./output/output.csv"
+df.to_csv(output_file_path, index=False)
+print(df)
