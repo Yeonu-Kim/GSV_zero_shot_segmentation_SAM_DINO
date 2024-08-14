@@ -14,6 +14,7 @@ import json
 from util.converter import panorama_to_cubemap, merge_faces
 from tqdm import tqdm 
 import warnings
+from PIL import Image
 
 warnings.filterwarnings(action='ignore')
 
@@ -41,16 +42,12 @@ def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray, do
             multimask_output=True,
             dominant=dominant
         )
-        
-        # for mask in masks:
-        #     plt.imshow(mask)
-        #     plt.show()
-        # if dominant:
-        #     index = np.argmax(scores)
-        # else:
-        #     sums = [np.sum(mask) for mask in masks]
-        #     index = np.argmin(sums)
-        index = np.argmax(scores)
+        if dominant:
+            index = np.argmax(scores)
+        else:
+            sums = [np.sum(mask) for mask in masks]
+            index = np.argmin(sums)
+        # index = np.argmax(scores)
         
         result_masks.append(masks[index])
     return np.array(result_masks)
@@ -64,9 +61,10 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = f"{HOME}/data"
-CLASSES = ['tree', 'building', 'sky', 'road', 'vehicle', 'pole', 'cable', 'trash', 'street light']
+SOURCE_IMAGE_PATH = "./streetview_data"
+CLASSES = ['tree', 'shrub', 'building', 'sky', 'road', 'sidewalk', 'vehicle', 'telegraph pole', 'cable', 'trash', 'bench']
 TINY_CLASSES = ['cable']
+HIGH_TRESHOLD = ['trash']
 BOX_TRESHOLD = 0.35
 TEXT_TRESHOLD = 0.25
 
@@ -78,7 +76,9 @@ df_columns = ['name'] + CLASSES
 df = pd.DataFrame(columns = df_columns)
 
 # load image
-images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
+images_name = np.array(pd.read_csv('./output_dummy.csv').loc[:, 'Filename'])
+print(images_name)
+images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(images_name) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
 
 for turn, image_path in enumerate(tqdm(images)):
     image = cv2.imread(image_path)
@@ -98,6 +98,10 @@ for turn, image_path in enumerate(tqdm(images)):
             #     class_names = [class_name, 'all street lights', 'all traffic lights']
             # else:
             #     class_names = [class_name]
+            
+            # Change the threshold when segment small items
+            if CLASSES[class_idx] in HIGH_TRESHOLD:
+                BOX_TRESHOLD = 0.40
 
             # detect objects
             detections = grounding_dino_model.predict_with_classes(
@@ -110,7 +114,7 @@ for turn, image_path in enumerate(tqdm(images)):
             # annotate image with detections
             box_annotator = sv.BoxAnnotator()
             labels = [
-                f"{CLASSES[class_id]} {confidence:0.2f}" 
+                f"{CLASSES[class_idx]} {confidence:0.2f}" 
                 for _, _, confidence, class_id, _, _
                 in detections]
             annotated_frame = box_annotator.annotate(scene=cubemap.copy(), detections=detections, labels=labels)
@@ -141,10 +145,9 @@ for turn, image_path in enumerate(tqdm(images)):
             
             total_pixel[class_idx] += np.sum(combined_mask)
 
-            # Save the combined mask as an image file every 100 time
-            if turn % 100 == 0:
-                combined_mask_path = f"{HOME}/output/{CLASSES[class_idx]}/{filename}.png"
-                cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
+            combined_mask_path = f"{HOME}/output/cubemap/{CLASSES[class_idx]}/{filename}_{key}.jpeg"
+            mask_img = Image.fromarray(combined_mask*255)
+            mask_img.save(combined_mask_path,'JPEG')
 
             # Show image polts for debugging
             if len(detections.mask) == 0:
@@ -154,7 +157,7 @@ for turn, image_path in enumerate(tqdm(images)):
             box_annotator = sv.BoxAnnotator()
             mask_annotator = sv.MaskAnnotator()
             labels = [
-                f"{CLASSES[class_id]} {confidence:0.2f}"
+                f"{CLASSES[class_idx]} {confidence:0.2f}"
                 for _, _, confidence, class_id, _, _
                 in detections
             ]
@@ -179,9 +182,9 @@ for turn, image_path in enumerate(tqdm(images)):
             # plt.show()
 
             # print(f"Combined mask saved at {combined_mask_path}")
-    total_pixel /= (512*512*4)
+    total_pixel /= (image.shape[0] * image.shape[1])
     df.loc[len(df)] = [filename] + list(total_pixel)
 
-output_file_path = "./output/output.csv"
+output_file_path = "./output/output_cubmap.csv"
 df.to_csv(output_file_path, index=False)
 print(df)

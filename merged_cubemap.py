@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import math
 from pycocotools import coco, cocoeval, mask as cocomask
+from util.converter import panorama_to_cubemap, merge_faces
 import json
 from tqdm import tqdm
 import warnings
@@ -61,7 +62,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = r"/mnt/d/streetview_data"
+SOURCE_IMAGE_PATH = "./streetview_data"
 # SOURCE_IMAGE_PATH = r"./data"
 CLASSES = ['tree', 'shrub', 'building', 'sky', 'road', 'sidewalk', 'vehicle', 'telegraph pole', 'cable', 'trash', 'bench']
 TINY_CLASSES = ['cable']
@@ -76,22 +77,27 @@ df_columns = ['name'] + CLASSES
 df = pd.DataFrame(columns = df_columns)
 
 # load image
-images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
+# images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in tqdm(os.listdir(SOURCE_IMAGE_PATH)) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f))]
+# images.sort()
 # images = random.sample(images, 900)
-
-# images_name = np.array(pd.read_csv('./output_dummy.csv').loc[:, 'Filename'])
-# print(images_name)
-# images = [os.path.join(SOURCE_IMAGE_PATH, f"{f}") for f in tqdm(images_name) if os.path.isfile(os.path.join(SOURCE_IMAGE_PATH, f"{f}"))]
-# print(images)
+images = ["_5CZ_jWgfVrMCSLGghjCpw.jpeg", "_9IbrnZ5Ebnk-i71yozsDA.jpeg", "_CMohzZzxbwRFBrQnNSVtg.jpeg"]
+images = [os.path.join(SOURCE_IMAGE_PATH, f) for f in images]
 
 for turn, image_path in enumerate(tqdm(images)):
-    image = cv2.imread(image_path)
+    raw_image = cv2.imread(image_path)
     filename, extension = os.path.basename(image_path).rsplit('.', 1)
-
     if extension != 'jpeg':
         continue
 
     total_pixel = np.zeros(len(CLASSES))
+
+    cubemaps = panorama_to_cubemap(raw_image)
+    image = merge_faces(cubemaps)[...,::-1]
+
+    original_image_path = f"{HOME}/output/cubemap/original/{filename}.jpeg"
+    image_data = Image.fromarray(image)
+    image_data.save(original_image_path,'JPEG')
+
     for class_idx, class_name in enumerate(class_names):
         # detect objects
         detections = grounding_dino_model.predict_with_classes(
@@ -140,9 +146,9 @@ for turn, image_path in enumerate(tqdm(images)):
         #     combined_mask_path = f"{HOME}/output/{class_name}/{filename}.png"
         #     cv2.imwrite(combined_mask_path, combined_mask * 255)  # Multiply by 255 to convert the binary mask to an 8-bit image
 
-        # combined_mask_path = f"{HOME}/output/panorama/{CLASSES[class_idx]}/{filename}.jpeg"
-        # mask_img = Image.fromarray(combined_mask*255)
-        # mask_img.save(combined_mask_path,'JPEG')
+        combined_mask_path = f"{HOME}/output/cubemap/{CLASSES[class_idx]}/{filename}.jpeg"
+        mask_img = Image.fromarray(combined_mask*255)
+        mask_img.save(combined_mask_path,'JPEG')
 
         # Show image polts for debugging
         if len(detections.mask) == 0:
@@ -187,9 +193,6 @@ for turn, image_path in enumerate(tqdm(images)):
     total_pixel /= (image.shape[0] * image.shape[1])
     df.loc[len(df)] = [filename] + list(total_pixel)
 
-    if turn % 1000 == 0 and turn != 0:
-        output_file_path = "./output/output_pano_{turn}.csv"
-        df.to_csv(output_file_path, index=False)
-        print(df)
-
-
+output_file_path = "./output/output_cubemap_merged.csv"
+df.to_csv(output_file_path, index=False)
+print(df)

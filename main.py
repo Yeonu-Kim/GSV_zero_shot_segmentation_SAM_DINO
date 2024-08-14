@@ -33,7 +33,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry["vit_h"](checkpoint=SAM_CHECKPOINT_PATH).to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
 
-SOURCE_IMAGE_PATH = f"{HOME}/data/satellite_ship_2.png"
+SOURCE_IMAGE_PATH = f"{HOME}/data/__FwscCqAFl8v3uNUXf4ow.jpeg"
 image = cv2.imread(SOURCE_IMAGE_PATH)
 
 sam_predictor.set_image(image)
@@ -54,7 +54,7 @@ xyxy_boxes = masks_to_boxes(masks)
 
 grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
 
-CLASSES = ['ship']
+CLASSES = ['tree', 'building', 'sky', 'sidewalk', 'vehicle', 'pole', 'cable', 'trash']
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.25
 

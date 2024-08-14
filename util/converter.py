@@ -137,7 +137,7 @@ def render_face(read_image, face, rotation, interpolation, max_width=np.inf):
 
 def panorama_to_cubemap(image):
     # Define the size of each cubemap face
-    face_size = 512
+    face_size = 1024
 
     # Define the faces of the cubemap
     faces = ['pz', 'nz', 'px', 'nx']
